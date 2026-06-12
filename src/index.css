@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme */
+    --background: 240 20% 99%;
+    --foreground: 224 30% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 30% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 30% 12%;
+
+    --primary: 245 75% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 10% 94%;
+    --secondary-foreground: 224 25% 20%;
+
+    --muted: 240 10% 95%;
+    --muted-foreground: 240 6% 45%;
+
+    --accent: 252 80% 96%;
+    --accent-foreground: 245 70% 40%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 240 12% 90%;
+    --input: 240 12% 90%;
+    --ring: 245 75% 60%;
+
+    --radius: 1rem;
+  }
+
+  .dark {
+    /* Dark theme — calm, deep indigo-charcoal */
+    --background: 224 38% 7%;
+    --foreground: 220 25% 92%;
+
+    --card: 224 30% 11%;
+    --card-foreground: 220 25% 92%;
+
+    --popover: 224 32% 10%;
+    --popover-foreground: 220 25% 92%;
+
+    --primary: 245 80% 67%;
+    --primary-foreground: 224 40% 8%;
+
+    --secondary: 224 22% 17%;
+    --secondary-foreground: 220 20% 88%;
+
+    --muted: 224 22% 16%;
+    --muted-foreground: 220 12% 60%;
+
+    --accent: 245 40% 22%;
+    --accent-foreground: 245 80% 85%;
+
+    --destructive: 0 70% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 55% 50%;
+    --success-foreground: 152 60% 10%;
+
+    --border: 224 20% 20%;
+    --input: 224 20% 22%;
+    --ring: 245 80% 67%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+    overscroll-behavior-y: none;
+  }
+  /* Respect device safe areas (notch / home indicator) for installed PWA. */
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Hide number input spinners for the quick-add amount field. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

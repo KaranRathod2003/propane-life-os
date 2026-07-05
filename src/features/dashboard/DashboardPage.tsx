@@ -28,7 +28,7 @@ import { monthLabel, nowIST } from "@/lib/date";
 import { format } from "date-fns";
 import { useUIStore } from "@/stores/ui";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { useMonthExpenses } from "@/features/expenses/hooks";
+import { useExpenses } from "@/features/expenses/hooks";
 import { copy } from "@/features/expenses/copy";
 import { useHabitLogs, useHabits } from "@/features/habits/hooks";
 import {
@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const month = useUIStore((s) => s.selectedMonth);
   const { user, signOut } = useAuth();
 
-  const expenses = useMonthExpenses(month);
+  const expenses = useExpenses();
   const habits = useHabits();
   const logs = useHabitLogs();
   const goals = useGoals();
@@ -77,7 +77,7 @@ export default function DashboardPage() {
   const plannedTotal = summary.perBucket.reduce((s, b) => s + b.estimate, 0);
   const spendChart = [
     { name: "Planned", value: plannedTotal },
-    { name: "Spent", value: summary.totalExpense },
+    { name: "Spent", value: summary.cycleSpend },
   ];
 
   return (
@@ -111,7 +111,7 @@ export default function DashboardPage() {
             <Card
               className={cn(
                 "overflow-hidden border-0 bg-gradient-to-br transition-transform active:scale-[0.99]",
-                summary.currentBalance < 0
+                summary.mainBalance < 0
                   ? "from-destructive/25 to-destructive/5"
                   : "from-primary/25 via-violet-500/10 to-transparent"
               )}
@@ -119,7 +119,7 @@ export default function DashboardPage() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold">
-                    {copy.hero.title} · {monthLabel(month)}
+                    {copy.hero.title} · {expenses.currentCycle?.label ?? monthLabel(month)}
                   </p>
                   {summary.savingsAtRisk ? (
                     <Badge variant="destructive">
@@ -134,10 +134,10 @@ export default function DashboardPage() {
                 <p
                   className={cn(
                     "mt-2 text-5xl font-bold tracking-tight tabular-nums",
-                    summary.currentBalance < 0 && "text-destructive"
+                    summary.mainBalance < 0 && "text-destructive"
                   )}
                 >
-                  {formatINR(summary.currentBalance)}
+                  {formatINR(summary.mainBalance)}
                 </p>
                 <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
                   {summary.freeToSpend > 0
@@ -242,7 +242,7 @@ export default function DashboardPage() {
                       <Cell fill="hsl(var(--muted-foreground))" />
                       <Cell
                         fill={
-                          summary.totalExpense > plannedTotal
+                          summary.cycleSpend > plannedTotal
                             ? "#f43f5e"
                             : "hsl(var(--primary))"
                         }
@@ -252,7 +252,7 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               </div>
               <p className="text-sm font-semibold tabular-nums">
-                {formatINR(summary.totalExpense)}
+                {formatINR(summary.cycleSpend)}
                 <span className="text-xs font-normal text-muted-foreground">
                   {" "}
                   / {formatINR(plannedTotal)}

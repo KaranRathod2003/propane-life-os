@@ -43,6 +43,8 @@ export async function clearAllData(): Promise<void> {
     "habits",
     "transactions",
     "budget_categories",
+    "cycles",
+    "accounts",
     "monthly_budgets",
     "journal_entries",
     "goals",
@@ -55,8 +57,21 @@ export async function clearAllData(): Promise<void> {
     if (error) throw error;
   }
 
-  const { error } = await supabase
+  // Re-seed a fresh-signup state: habits + Main/Savings accounts + a current cycle.
+  const seedHabits = supabase
     .from("habits")
     .insert(DEFAULT_HABITS.map((h) => ({ ...h, user_id: user.id })));
-  if (error) throw error;
+  const seedAccounts = supabase.from("accounts").insert([
+    { user_id: user.id, name: "Main", kind: "main", sort_order: 1 },
+    { user_id: user.id, name: "Savings", kind: "savings", sort_order: 2 },
+  ]);
+  const now = new Date();
+  const label = now.toLocaleString("en-IN", { month: "short", year: "numeric" });
+  const started_on = now.toISOString().slice(0, 10);
+  const seedCycle = supabase
+    .from("cycles")
+    .insert({ user_id: user.id, label, started_on, is_current: true });
+
+  const results = await Promise.all([seedHabits, seedAccounts, seedCycle]);
+  for (const r of results) if (r.error) throw r.error;
 }

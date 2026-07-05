@@ -13,11 +13,12 @@ import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/format";
 import { todayISO } from "@/lib/date";
 import { useUIStore } from "@/stores/ui";
-import { useCategories, useCreateTransaction } from "./hooks";
+import { useExpenses, useCreateTransaction } from "./hooks";
 import { copy } from "./copy";
-import type { TransactionType } from "@/types";
+// Quick-add only handles single-account types; transfers use their own sheet.
+type QuickType = "expense" | "income" | "lent" | "borrowed_repayment";
 
-const TYPE_OPTIONS: { value: TransactionType; label: string }[] = [
+const TYPE_OPTIONS: { value: QuickType; label: string }[] = [
   { value: "expense", label: copy.quickAdd.types.expense },
   { value: "income", label: copy.quickAdd.types.income },
   { value: "lent", label: copy.quickAdd.types.lent },
@@ -44,14 +45,25 @@ export function QuickAddButton() {
 function QuickAddSheet() {
   const open = useUIStore((s) => s.quickAddOpen);
   const setOpen = useUIStore((s) => s.setQuickAddOpen);
-  const month = useUIStore((s) => s.selectedMonth);
 
-  const { data: categories } = useCategories(month);
-  const createTx = useCreateTransaction(month);
+  const { accounts, categories, currentCycle } = useExpenses();
+  const createTx = useCreateTransaction();
+
+  const accountList = accounts.data ?? [];
+  const mainAccount = accountList.find((a) => a.kind === "main") ?? accountList[0];
+  const cycleCats = useMemo(
+    () =>
+      (categories.data ?? [])
+        .filter((c) => currentCycle && c.cycle_id === currentCycle.id)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [categories.data, currentCycle]
+  );
 
   const [amount, setAmount] = useState("");
-  const [type, setType] = useState<TransactionType>("expense");
+  const [type, setType] = useState<QuickType>("expense");
+  const [accountId, setAccountId] = useState<string>("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [source, setSource] = useState("");
   const [note, setNote] = useState("");
 
   // Reset on open so logging always starts clean.
@@ -59,19 +71,16 @@ function QuickAddSheet() {
     if (open) {
       setAmount("");
       setType("expense");
+      setAccountId(mainAccount?.id ?? "");
       setCategoryId(null);
+      setSource("");
       setNote("");
     }
-  }, [open]);
-
-  const sortedCategories = useMemo(
-    () =>
-      [...(categories ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
-    [categories]
-  );
+  }, [open, mainAccount?.id]);
 
   const numericAmount = Number(amount);
-  const canSave = numericAmount > 0 && !createTx.isPending;
+  const canSave = numericAmount > 0 && !!accountId && !createTx.isPending;
+  const isMain = mainAccount && accountId === mainAccount.id;
 
   const onSave = async () => {
     if (!canSave) {
@@ -80,7 +89,11 @@ function QuickAddSheet() {
     }
     await createTx.mutateAsync({
       amount: numericAmount,
+      account_id: accountId,
+      // Only Main-account spending/income counts toward the salary cycle plan.
+      cycle_id: isMain && currentCycle ? currentCycle.id : null,
       category_id: type === "expense" ? categoryId : null,
+      tag: type === "income" ? source.trim() || null : null,
       note: note.trim() || null,
       type,
       date: todayISO(),
@@ -90,13 +103,13 @@ function QuickAddSheet() {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetContent>
+      <SheetContent className="max-h-[92vh] overflow-y-auto no-scrollbar">
         <SheetHeader>
           <SheetTitle>{copy.quickAdd.title}</SheetTitle>
         </SheetHeader>
 
         {/* Big amount input */}
-        <div className="flex items-center justify-center gap-1 py-2">
+        <div className="flex items-center justify-center gap-1 py-1">
           <span className="text-3xl font-semibold text-muted-foreground">₹</span>
           <Input
             type="number"
@@ -127,6 +140,31 @@ function QuickAddSheet() {
           ))}
         </div>
 
+        {/* Account picker */}
+        {accountList.length > 1 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              {copy.quickAdd.accountLabel}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {accountList.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setAccountId(a.id)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                    accountId === a.id
+                      ? "border-primary bg-primary/15 text-primary"
+                      : "border-border text-muted-foreground"
+                  )}
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Category chips (only for expenses) */}
         {type === "expense" && (
           <div className="space-y-2">
@@ -134,12 +172,12 @@ function QuickAddSheet() {
               {copy.quickAdd.bucketLabel}
             </p>
             <div className="flex flex-wrap gap-2">
-              {sortedCategories.length === 0 && (
+              {cycleCats.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   {copy.quickAdd.noBuckets}
                 </p>
               )}
-              {sortedCategories.map((c) => (
+              {cycleCats.map((c) => (
                 <button
                   key={c.id}
                   onClick={() =>
@@ -156,6 +194,20 @@ function QuickAddSheet() {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Income source */}
+        {type === "income" && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              {copy.quickAdd.sourceLabel}
+            </p>
+            <Input
+              placeholder={copy.quickAdd.sourcePlaceholder}
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+            />
           </div>
         )}
 

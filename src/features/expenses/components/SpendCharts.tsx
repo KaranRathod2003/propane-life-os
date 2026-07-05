@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/common/EmptyState";
 import { formatINR } from "@/lib/format";
 import { copy } from "../copy";
-import type { BucketSpend, DailyPoint } from "../computations";
+import type { BucketSpend, DailyPoint, Slice } from "../computations";
 
 const DONUT_COLORS = [
   "#6366f1",
@@ -144,6 +144,77 @@ export function DailySpendChart({ data }: { data: DailyPoint[] }) {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Generic donut from Slice[] — used by the month-by-month Breakdown. */
+export function SlicePie({
+  title,
+  slices,
+  emptyText,
+}: {
+  title: string;
+  slices: Slice[];
+  emptyText: string;
+}) {
+  const total = slices.reduce((s, x) => s + x.value, 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {slices.length === 0 ? (
+          <EmptyState icon={PieIcon} title={emptyText} />
+        ) : (
+          <div className="flex items-center gap-4">
+            <div className="relative h-40 w-40 shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={slices}
+                    dataKey="value"
+                    innerRadius={48}
+                    outerRadius={72}
+                    paddingAngle={2}
+                    stroke="none"
+                  >
+                    {slices.map((_, i) => (
+                      <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number) => formatINR(v)}
+                    contentStyle={tooltipStyle}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[11px] text-muted-foreground">Total</span>
+                <span className="text-sm font-bold tabular-nums">
+                  {formatINR(total)}
+                </span>
+              </div>
+            </div>
+            <ul className="flex-1 space-y-1.5 text-sm">
+              {slices.slice(0, 6).map((s, i) => (
+                <li key={s.name} className="flex items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }}
+                  />
+                  <span className="flex-1 truncate text-muted-foreground">
+                    {s.name}
+                  </span>
+                  <span className="tabular-nums">{formatINR(s.value)}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </CardContent>

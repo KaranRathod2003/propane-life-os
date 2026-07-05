@@ -1,96 +1,109 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import * as api from "./api";
-import { computeSummary } from "./computations";
-import type {
-  NewBudgetCategory,
-  NewTransaction,
-} from "@/types";
+import {
+  computeBalances,
+  computeCycleSummary,
+  mainBalanceOf,
+} from "./computations";
+import type { Cycle, NewBudgetCategory, NewTransaction } from "@/types";
 
-const keys = {
-  budget: (m: string) => ["budget", m] as const,
-  categories: (m: string) => ["categories", m] as const,
-  transactions: (m: string) => ["transactions", m] as const,
+const KEYS = {
+  accounts: ["accounts"] as const,
+  cycles: ["cycles"] as const,
+  categories: ["categories"] as const,
+  transactions: ["transactions"] as const,
 };
 
-export function useBudget(month: string) {
-  return useQuery({
-    queryKey: keys.budget(month),
-    queryFn: () => api.fetchBudget(month),
-  });
-}
+// ---------------------------------------------------------------------------
+// Combined read model
+// ---------------------------------------------------------------------------
 
-export function useCategories(month: string) {
-  return useQuery({
-    queryKey: keys.categories(month),
-    queryFn: () => api.fetchCategories(month),
-  });
-}
+export function useExpenses() {
+  const accounts = useQuery({ queryKey: KEYS.accounts, queryFn: api.fetchAccounts });
+  const cycles = useQuery({ queryKey: KEYS.cycles, queryFn: api.fetchCycles });
+  const categories = useQuery({ queryKey: KEYS.categories, queryFn: api.fetchCategories });
+  const transactions = useQuery({ queryKey: KEYS.transactions, queryFn: api.fetchTransactions });
 
-export function useTransactions(month: string) {
-  return useQuery({
-    queryKey: keys.transactions(month),
-    queryFn: () => api.fetchTransactions(month),
-  });
-}
+  const currentCycle = useMemo(
+    () => (cycles.data ?? []).find((c) => c.is_current) ?? null,
+    [cycles.data]
+  );
 
-/** Combined month data + derived summary. */
-export function useMonthExpenses(month: string) {
-  const budget = useBudget(month);
-  const categories = useCategories(month);
-  const transactions = useTransactions(month);
+  const balances = useMemo(
+    () => computeBalances(accounts.data ?? [], transactions.data ?? []),
+    [accounts.data, transactions.data]
+  );
+  const mainBalance = mainBalanceOf(balances);
 
   const summary = useMemo(
     () =>
-      computeSummary(
-        month,
-        budget.data ?? null,
+      computeCycleSummary(
+        currentCycle,
+        mainBalance,
         categories.data ?? [],
         transactions.data ?? []
       ),
-    [month, budget.data, categories.data, transactions.data]
+    [currentCycle, mainBalance, categories.data, transactions.data]
   );
 
   return {
-    budget,
+    accounts,
+    cycles,
     categories,
     transactions,
+    currentCycle,
+    balances,
+    mainBalance,
     summary,
     isLoading:
-      budget.isLoading || categories.isLoading || transactions.isLoading,
-    isError: budget.isError || categories.isError || transactions.isError,
+      accounts.isLoading ||
+      cycles.isLoading ||
+      categories.isLoading ||
+      transactions.isLoading,
+    isError:
+      accounts.isError ||
+      cycles.isError ||
+      categories.isError ||
+      transactions.isError,
     refetch: () => {
-      budget.refetch();
+      accounts.refetch();
+      cycles.refetch();
       categories.refetch();
       transactions.refetch();
     },
   };
 }
 
-export function useCreateTransaction(month: string) {
+// ---------------------------------------------------------------------------
+// Mutations
+// ---------------------------------------------------------------------------
+
+function useInvalidate() {
   const qc = useQueryClient();
+  return (keys: readonly (readonly string[])[]) =>
+    keys.forEach((key) => qc.invalidateQueries({ queryKey: key }));
+}
+
+export function useCreateTransaction() {
+  const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (payload: NewTransaction) => api.createTransaction(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.transactions(month) });
+      invalidate([KEYS.transactions]);
       toast.success("Logged");
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Could not save"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
   });
 }
 
-export function useDeleteTransaction(month: string) {
-  const qc = useQueryClient();
+export function useDeleteTransaction() {
+  const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (id: string) => api.deleteTransaction(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.transactions(month) });
+      invalidate([KEYS.transactions]);
       toast.success("Deleted");
     },
     onError: (e) =>
@@ -98,77 +111,125 @@ export function useDeleteTransaction(month: string) {
   });
 }
 
-export function useUpsertBudget(month: string) {
-  const qc = useQueryClient();
+export function useCreateTransfer() {
+  const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: ({
-      opening_balance,
-      saving_target,
-    }: {
-      opening_balance: number;
-      saving_target: number;
-    }) => api.upsertBudget(month, opening_balance, saving_target),
+    mutationFn: (params: {
+      fromAccountId: string;
+      toAccountId: string;
+      amount: number;
+      date: string;
+      note: string | null;
+    }) => api.createTransfer(params),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.budget(month) });
-      toast.success("Saved");
+      invalidate([KEYS.transactions]);
+      toast.success("Transferred");
     },
     onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Could not save budget"),
+      toast.error(e instanceof Error ? e.message : "Transfer failed"),
   });
 }
 
-export function useCreateCategory(month: string) {
-  const qc = useQueryClient();
+export function useStartSalaryCycle() {
+  const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (payload: NewBudgetCategory) => api.createCategory(payload),
+    mutationFn: (params: {
+      mainAccountId: string;
+      salaryAmount: number;
+      savingTarget: number;
+      carryBucketsFromCycleId: string | null;
+    }) => api.startSalaryCycle(params),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.categories(month) });
-      toast.success("Category added");
+      invalidate([KEYS.cycles, KEYS.transactions, KEYS.categories]);
+      toast.success("New cycle started 🎉");
     },
     onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Could not add category"),
+      toast.error(e instanceof Error ? e.message : "Could not start cycle"),
   });
 }
 
-export function useUpdateCategory(month: string) {
-  const qc = useQueryClient();
+export function useUpdateCycle() {
+  const invalidate = useInvalidate();
   return useMutation({
     mutationFn: ({
       id,
       patch,
     }: {
       id: string;
-      patch: Partial<NewBudgetCategory>;
-    }) => api.updateCategory(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.categories(month) }),
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Could not update"),
+      patch: Partial<Pick<Cycle, "salary_amount" | "saving_target" | "label">>;
+    }) => api.updateCycle(id, patch),
+    onSuccess: () => {
+      invalidate([KEYS.cycles]);
+      toast.success("Saved");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
   });
 }
 
-export function useDeleteCategory(month: string) {
-  const qc = useQueryClient();
+export function useUpdateAccountOpening() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: ({ id, opening_balance }: { id: string; opening_balance: number }) =>
+      api.updateAccountOpening(id, opening_balance),
+    onSuccess: () => {
+      invalidate([KEYS.accounts]);
+      toast.success("Balance updated");
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Could not update balance"),
+  });
+}
+
+export function useCreateCategory() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (payload: NewBudgetCategory) => api.createCategory(payload),
+    onSuccess: () => {
+      invalidate([KEYS.categories]);
+      toast.success("Bucket added");
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Could not add bucket"),
+  });
+}
+
+export function useUpdateCategory() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: ({
+      id,
+      patch,
+    }: {
+      id: string;
+      patch: Partial<Pick<NewBudgetCategory, "name" | "planned_amount">>;
+    }) => api.updateCategory(id, patch),
+    onSuccess: () => invalidate([KEYS.categories]),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update"),
+  });
+}
+
+export function useDeleteCategory() {
+  const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (id: string) => api.deleteCategory(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.categories(month) });
-      toast.success("Category removed");
+      invalidate([KEYS.categories]);
+      toast.success("Bucket removed");
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : "Could not remove"),
   });
 }
 
-export function useSeedBudget(month: string) {
-  const qc = useQueryClient();
+export function useSeedBuckets() {
+  const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: () => api.seedDefaultBudget(month),
+    mutationFn: (cycleId: string) => api.seedStarterBuckets(cycleId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.budget(month) });
-      qc.invalidateQueries({ queryKey: keys.categories(month) });
-      toast.success("Starter budget created");
+      invalidate([KEYS.categories]);
+      toast.success("Starter buckets added");
     },
     onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Could not create budget"),
+      toast.error(e instanceof Error ? e.message : "Could not seed buckets"),
   });
 }

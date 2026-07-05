@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Settings2,
-  Wallet,
   PiggyBank,
   Sparkles,
   ShieldCheck,
@@ -9,7 +8,6 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ErrorState } from "@/components/common/ErrorState";
-import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,75 +15,78 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/format";
-import { useUIStore } from "@/stores/ui";
-import { useMonthExpenses, useSeedBudget } from "./hooks";
+import { useExpenses } from "./hooks";
 import { copy } from "./copy";
-import { MonthSelector } from "./components/MonthSelector";
+import { AccountsStrip } from "./components/AccountsStrip";
+import { SalaryButton } from "./components/SalarySheet";
 import { BudgetSetupSheet } from "./components/BudgetSetupSheet";
 import { TransactionList } from "./components/TransactionList";
 import { CategoryBudgets } from "./components/CategoryBudgets";
 import { CategoryDonut, DailySpendChart } from "./components/SpendCharts";
+import { Breakdown } from "./components/Breakdown";
 
 export default function ExpensesPage() {
-  const month = useUIStore((s) => s.selectedMonth);
   const [setupOpen, setSetupOpen] = useState(false);
   const {
-    budget,
+    accounts,
     categories,
     transactions,
+    currentCycle,
+    balances,
     summary,
     isLoading,
     isError,
     refetch,
-  } = useMonthExpenses(month);
-  const seed = useSeedBudget(month);
+  } = useExpenses();
 
-  const hasBudget = !!budget.data;
-  const negative = summary.currentBalance < 0;
+  const allTxns = transactions.data ?? [];
+  const allCats = categories.data ?? [];
+  const mainAccount = (accounts.data ?? []).find((a) => a.kind === "main") ?? null;
+
+  const cycleTxns = useMemo(
+    () => (currentCycle ? allTxns.filter((t) => t.cycle_id === currentCycle.id) : []),
+    [allTxns, currentCycle]
+  );
+  const cycleCats = useMemo(
+    () => (currentCycle ? allCats.filter((c) => c.cycle_id === currentCycle.id) : []),
+    [allCats, currentCycle]
+  );
+
+  const negative = summary.mainBalance < 0;
 
   return (
     <div>
       <PageHeader
-        title="Expenses"
+        title="Money"
         action={
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setSetupOpen(true)}
-            aria-label="Money setup"
+            aria-label="Plan setup"
           >
             <Settings2 className="h-5 w-5" />
           </Button>
         }
       />
 
-      <div className="mb-4">
-        <MonthSelector />
-      </div>
-
       {isError ? (
         <ErrorState onRetry={refetch} />
       ) : isLoading ? (
         <LoadingState />
-      ) : !hasBudget ? (
-        <EmptyState
-          icon={Wallet}
-          title={copy.empty.title}
-          hint={copy.empty.hint}
-          action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button onClick={() => seed.mutate()} disabled={seed.isPending}>
-                {copy.empty.seed}
-              </Button>
-              <Button variant="outline" onClick={() => setSetupOpen(true)}>
-                {copy.empty.manual}
-              </Button>
-            </div>
-          }
-        />
       ) : (
         <div className="space-y-3">
-          {/* HERO — What's Left (live bank balance) */}
+          {/* Accounts + transfer */}
+          <AccountsStrip balances={balances} />
+
+          {/* Salary → new cycle */}
+          <SalaryButton
+            currentCycle={currentCycle}
+            mainAccount={mainAccount}
+            hasBuckets={cycleCats.length > 0}
+          />
+
+          {/* HERO — What's Left (live Main balance, carries over) */}
           <Card
             className={cn(
               "overflow-hidden border-0 bg-gradient-to-br",
@@ -113,14 +114,13 @@ export default function ExpensesPage() {
                   negative && "text-destructive"
                 )}
               >
-                {formatINR(summary.currentBalance)}
+                {formatINR(summary.mainBalance)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {negative ? copy.hero.negativeSub : copy.hero.sub}
               </p>
               <p className="mt-2 text-[11px] text-muted-foreground/80">
-                from {formatINR(summary.openingBalance)} · spent{" "}
-                {formatINR(summary.totalExpense)}
+                spent {formatINR(summary.cycleSpend)} this cycle
                 {summary.plannedRemaining > 0 &&
                   ` · ${formatINR(summary.plannedRemaining)} still planned`}
               </p>
@@ -137,18 +137,14 @@ export default function ExpensesPage() {
                 <p
                   className={cn(
                     "mt-1 text-2xl font-bold tabular-nums",
-                    summary.freeToSpend <= 0
-                      ? "text-destructive"
-                      : "text-success"
+                    summary.freeToSpend <= 0 ? "text-destructive" : "text-success"
                   )}
                 >
                   {summary.freeToSpend > 0
                     ? formatINR(summary.freeToSpend)
                     : copy.free.none}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {copy.free.hint}
-                </p>
+                <p className="text-xs text-muted-foreground">{copy.free.hint}</p>
               </CardContent>
             </Card>
             <Card>
@@ -188,23 +184,20 @@ export default function ExpensesPage() {
 
             <TabsContent value="receipts">
               <TransactionList
-                month={month}
-                transactions={transactions.data ?? []}
-                categories={categories.data ?? []}
+                transactions={cycleTxns}
+                categories={allCats}
                 summary={summary}
               />
             </TabsContent>
 
-            <TabsContent value="plans">
-              <CategoryBudgets
-                data={summary.perBucket}
-                transactions={transactions.data ?? []}
-              />
-            </TabsContent>
-
-            <TabsContent value="charts" className="space-y-4">
+            <TabsContent value="plans" className="space-y-4">
+              <CategoryBudgets data={summary.perBucket} transactions={cycleTxns} />
               <CategoryDonut data={summary.perBucket} />
               <DailySpendChart data={summary.dailySpend} />
+            </TabsContent>
+
+            <TabsContent value="charts">
+              <Breakdown transactions={allTxns} categories={allCats} />
             </TabsContent>
           </Tabs>
         </div>
@@ -213,9 +206,8 @@ export default function ExpensesPage() {
       <BudgetSetupSheet
         open={setupOpen}
         onOpenChange={setSetupOpen}
-        month={month}
-        budget={budget.data ?? null}
-        categories={categories.data ?? []}
+        cycle={currentCycle}
+        categories={cycleCats}
       />
     </div>
   );
@@ -224,12 +216,15 @@ export default function ExpensesPage() {
 function LoadingState() {
   return (
     <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
       <Skeleton className="h-32 w-full" />
       <div className="grid grid-cols-2 gap-3">
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-24 w-full" />
       </div>
-      <Skeleton className="h-10 w-full" />
       <Skeleton className="h-40 w-full" />
     </div>
   );

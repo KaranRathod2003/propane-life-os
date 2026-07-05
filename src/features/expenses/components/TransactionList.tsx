@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/format";
 import { dayLabel } from "@/lib/date";
 import type { BudgetCategory, Transaction } from "@/types";
-import { type ExpenseSummary, transactionRisk } from "../computations";
+import { type CycleSummary, transactionRisk, INFLOW_TYPES } from "../computations";
 import { copy } from "../copy";
 import { useDeleteTransaction } from "../hooks";
 
@@ -15,22 +15,20 @@ const TYPE_LABEL: Record<Transaction["type"], string> = {
   income: "Got money",
   lent: "Lent out",
   borrowed_repayment: "Got it back",
+  transfer_out: "Transferred out",
+  transfer_in: "Transferred in",
 };
 
-const INFLOW_TYPES: Transaction["type"][] = ["income", "borrowed_repayment"];
-
 export function TransactionList({
-  month,
   transactions,
   categories,
   summary,
 }: {
-  month: string;
   transactions: Transaction[];
   categories: BudgetCategory[];
-  summary: ExpenseSummary;
+  summary: CycleSummary;
 }) {
-  const del = useDeleteTransaction(month);
+  const del = useDeleteTransaction();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const catName = (id: string | null) =>
     categories.find((c) => c.id === id)?.name;
@@ -62,6 +60,11 @@ export function TransactionList({
             {items.map((t, idx) => {
               const risk = transactionRisk(t, summary);
               const isInflow = INFLOW_TYPES.includes(t.type);
+              const label =
+                catName(t.category_id) ||
+                t.tag ||
+                TYPE_LABEL[t.type] ||
+                "Uncategorised";
               return (
                 <div
                   key={t.id}
@@ -73,11 +76,7 @@ export function TransactionList({
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {catName(t.category_id) ||
-                          TYPE_LABEL[t.type] ||
-                          "Uncategorised"}
-                      </span>
+                      <span className="truncate text-sm font-medium">{label}</span>
                       {risk.atRisk && (
                         <Badge variant="destructive" className="shrink-0">
                           <AlertTriangle className="h-3 w-3" />
@@ -108,7 +107,9 @@ export function TransactionList({
 
                   {confirmId === t.id ? (
                     <button
-                      onClick={() => del.mutate(t.id, { onSettled: () => setConfirmId(null) })}
+                      onClick={() =>
+                        del.mutate(t.id, { onSettled: () => setConfirmId(null) })
+                      }
                       className="shrink-0 rounded-lg bg-destructive px-2 py-1 text-xs font-medium text-destructive-foreground"
                     >
                       Sure?

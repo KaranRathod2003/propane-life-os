@@ -6,18 +6,36 @@ export type TransactionType =
   | "expense"
   | "income"
   | "lent"
-  | "borrowed_repayment";
+  | "borrowed_repayment"
+  | "transfer_out"
+  | "transfer_in";
+
+export type AccountKind = "main" | "savings";
 
 export type GoalStatus = "active" | "done";
 
-export interface MonthlyBudget {
+/** A bank account with a persistent running balance (never auto-resets). */
+export interface Account {
   id: string;
   user_id: string;
-  /** First day of the month, ISO date string e.g. "2026-06-01". */
-  month: string;
-  /** Real bank balance right after salary credit — the ledger's anchor. */
+  name: string;
+  kind: AccountKind;
+  /** Anchor so the running balance matches the real bank number. */
   opening_balance: number;
+  sort_order: number;
+  created_at: string;
+}
+
+/** A salary cycle — a resettable planning period. Started when salary lands. */
+export interface Cycle {
+  id: string;
+  user_id: string;
+  label: string;
+  /** ISO date the cycle began, e.g. "2026-07-05". */
+  started_on: string;
+  salary_amount: number;
   saving_target: number;
+  is_current: boolean;
   created_at: string;
 }
 
@@ -27,7 +45,9 @@ export interface BudgetCategory {
   name: string;
   planned_amount: number;
   type: CategoryType;
-  month: string;
+  /** Legacy v1 field; new rows use cycle_id. */
+  month: string | null;
+  cycle_id: string | null;
   created_at: string;
 }
 
@@ -35,10 +55,16 @@ export interface Transaction {
   id: string;
   user_id: string;
   amount: number;
+  account_id: string | null;
+  cycle_id: string | null;
   category_id: string | null;
+  /** Free-text label for analytics (expense: where; income: source). */
+  tag: string | null;
+  /** Pairs the two legs of a transfer. */
+  transfer_id: string | null;
   note: string | null;
   type: TransactionType;
-  /** ISO date string e.g. "2026-06-11". */
+  /** ISO date string e.g. "2026-07-05". */
   date: string;
   created_at: string;
 }
@@ -87,12 +113,17 @@ export interface Goal {
 // Insert payloads (server fills id/created_at; we add user_id in the API layer).
 export type NewTransaction = Pick<
   Transaction,
-  "amount" | "category_id" | "note" | "type" | "date"
->;
+  "amount" | "account_id" | "category_id" | "note" | "type" | "date"
+> & {
+  cycle_id?: string | null;
+  tag?: string | null;
+};
 export type NewBudgetCategory = Pick<
   BudgetCategory,
-  "name" | "planned_amount" | "type" | "month"
->;
+  "name" | "planned_amount" | "type"
+> & {
+  cycle_id: string | null;
+};
 export type NewJournalEntry = Pick<
   JournalEntry,
   "title" | "content" | "tags" | "entry_date"

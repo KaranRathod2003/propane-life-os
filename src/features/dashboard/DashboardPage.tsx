@@ -14,12 +14,10 @@ import {
   PiggyBank,
   ArrowRight,
   NotebookPen,
-  LogOut,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { ProgressRing } from "@/components/common/ProgressRing";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { cn } from "@/lib/utils";
@@ -28,6 +26,7 @@ import { monthLabel, nowIST } from "@/lib/date";
 import { format } from "date-fns";
 import { useUIStore } from "@/stores/ui";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { AccountSwitcher } from "@/features/auth/AccountSwitcher";
 import { useExpenses } from "@/features/expenses/hooks";
 import { copy } from "@/features/expenses/copy";
 import { useHabitLogs, useHabits } from "@/features/habits/hooks";
@@ -41,7 +40,7 @@ import { DangerZone } from "@/features/settings/DangerZone";
 
 export default function DashboardPage() {
   const month = useUIStore((s) => s.selectedMonth);
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
 
   const expenses = useExpenses();
   const habits = useHabits();
@@ -89,16 +88,9 @@ export default function DashboardPage() {
             {firstName}
           </h1>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => signOut()}
-            aria-label="Sign out"
-          >
-            <LogOut className="h-5 w-5" />
-          </Button>
+          <AccountSwitcher />
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -19,12 +19,18 @@ type Mode = "signin" | "signup";
 
 export default function LoginPage() {
   const { session, loading: authLoading } = useAuth();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+
+  /** Reached from the account switcher: sign in *alongside* the current session. */
+  const adding = params.get("add") === "1";
   const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(params.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (!authLoading && session) return <Navigate to="/" replace />;
+  // While adding, an existing session is expected — don't bounce off this page.
+  if (!authLoading && session && !adding) return <Navigate to="/" replace />;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,17 +41,21 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         toast.success(
           "Account created. If email confirmation is on, check your inbox."
         );
+        // With confirmation on there's no session yet, so nowhere to go.
+        if (adding && data.session) navigate("/", { replace: true });
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) throw error;
+        // The redirect guard above is disabled while adding — go there ourselves.
+        if (adding) navigate("/", { replace: true });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Authentication failed.");
@@ -57,6 +67,16 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
+        {adding && (
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+        )}
+
         <div className="space-y-2 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-2xl font-bold text-white shadow-lg">
             L
@@ -70,12 +90,20 @@ export default function LoginPage() {
         <Card>
           <CardHeader>
             <CardTitle>
-              {mode === "signin" ? "Welcome back" : "Create your account"}
+              {adding
+                ? mode === "signin"
+                  ? "Add another account"
+                  : "Create another account"
+                : mode === "signin"
+                  ? "Welcome back"
+                  : "Create your account"}
             </CardTitle>
             <CardDescription>
-              {mode === "signin"
-                ? "Sign in to continue."
-                : "Sign up to get started."}
+              {adding
+                ? "Your current account stays signed in — switch anytime."
+                : mode === "signin"
+                  ? "Sign in to continue."
+                  : "Sign up to get started."}
             </CardDescription>
           </CardHeader>
           <CardContent>

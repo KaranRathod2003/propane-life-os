@@ -26,3 +26,6 @@ dist-ssr
 
 # PWA generated
 dev-dist
+
+# TypeScript incremental build cache
+*.tsbuildinfo
